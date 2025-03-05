@@ -6,26 +6,26 @@ import torch.nn as nn
 
 # Nerf positional embedding
 class nerf_pos_embedding(nn.Module):
-    def __init__(self, in_dim, multires, log_sampling=True):
-        super().__init__()
-        self.log_sampling = log_sampling
-        self.include_input = True
+    def __init__(self, in_dim, multires, log_sampling=True): 
+        super().__init__()  
+        self.log_sampling = log_sampling # whether to sample in log space
+        self.include_input = True #
         self.periodic_fns = [torch.sin, torch.cos]
         self.max_freq = multires-1
         self.N_freqs = multires
         self.embedding_size = multires*in_dim*2 + in_dim
 
     def forward(self, x):
-        ray, points, _ = x.shape
+        ray, points, _ = x.shape # ray: batch size, points: number of points
         x = x.view(-1, 3)
         if self.log_sampling:
             freq_bands = 2.**torch.linspace(0., self.max_freq, steps=self.N_freqs)
         else:
             freq_bands = torch.linspace(2.**0., 2.**self.max_freq, steps=self.N_freqs)
         output = []
-        if self.include_input:
-            output.append(x)
-        for freq in freq_bands:
+        if self.include_input: # whether to include input
+            output.append(x) # append input
+        for freq in freq_bands: # for each frequency band
             for p_fn in self.periodic_fns:
                 output.append(p_fn(x * freq))
         ret = torch.cat(output, dim=1)
@@ -43,7 +43,7 @@ class encoder(nn.Module):
             [nn.Linear(hidden_dim, out_dim)] )
 
     def forward(self, x):
-        x = self.pe(x)
+        x = self.pe(x) # positional encoding
         ray, points, _ = x.shape
         x = x.view(-1, self.pe.embedding_size)
         for i, l in enumerate(self.pts_linears):

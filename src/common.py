@@ -23,12 +23,13 @@ import numpy as np
 import torch
 from pytorch3d.transforms import matrix_to_quaternion, quaternion_to_matrix
 
+#intrinsic_matirx 用于将相机内参转换为相机矩阵
 def as_intrinsics_matrix(intrinsics):
     """
     Get matrix representation of intrinsics.
 
     """
-    K = np.eye(3)
+    K = np.eye(3) # 3x3单位矩阵
     K[0, 0] = intrinsics[0]
     K[1, 1] = intrinsics[1]
     K[0, 2] = intrinsics[2]
@@ -145,7 +146,7 @@ def get_sample_uv(H0, H1, W0, W1, n, b, depths, colors, sem_feats=None, rgb_feat
         sampled_gt_label = None
 
     return i, j, depth, color, sampled_sem_feats, sampled_rgb_feats, sampled_gt_label
-
+ 
 def get_samples(H0, H1, W0, W1, n, H, W, fx, fy, cx, cy, c2ws, depths, colors,
                 sem_feats=None, rgb_feats=None, gt_label=None, device='cuda:0', dim=16):
     """
@@ -160,6 +161,8 @@ def get_samples(H0, H1, W0, W1, n, H, W, fx, fy, cx, cy, c2ws, depths, colors,
     rays_o, rays_d = get_rays_from_uv(i, j, c2ws, H, W, fx, fy, cx, cy, device)
 
     # return rays_o, rays_d, sample_depth, sample_color
+    #rays_o: (b, n, 3), rays_d: (b, n, 3), sample_depth: (b, n), sample_color: (b, n, 3)
+    #ray_o 和 ray_d 是从相机坐标系到世界坐标系的变换，其中ray_o是相机坐标系的原点，ray_d是相机坐标系的方向
     return (rays_o.reshape(-1, 3), rays_d.reshape(-1, 3), sample_depth.reshape(-1), sample_color.reshape(-1, 3),
             sampled_sem_feats.reshape(-1, dim) if sampled_sem_feats is not None else None,
             sampled_rgb_feats.reshape(-1, dim) if sampled_rgb_feats is not None else None,
