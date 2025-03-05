@@ -34,6 +34,8 @@ class SNI_SLAM():
         self.device = cfg['device'] #使用的设备
         self.dataset = cfg['dataset']   #数据集名称
         self.truncation = cfg['model']['truncation'] #截断值
+        
+        self.semantic_only = cfg['semantic_only'] #是否只输出语义信息
 
         #如果没有在命令行指定输出目录，则使用配置文件中的输出目录
         if args.output is None: 

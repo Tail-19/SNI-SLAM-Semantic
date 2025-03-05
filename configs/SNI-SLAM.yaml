@@ -1,9 +1,10 @@
 scale: 1
 verbose: False
-# device: "cuda:0"
+# device: "cuda:0" #Hanlu: This is for test run on 4060
 device: "cpu"
 keyframe_device: "cpu" # Change this to "cpu" to reduce GPU memory usage
 feature_device: "cpu"
+semantic_only: True
 
 # 平面的分辨率
 planes_res: 
