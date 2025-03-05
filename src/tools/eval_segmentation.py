@@ -61,13 +61,15 @@ class Eval_Segmentation():
                 semantic, rgb = self.render_batch_ray(all_planes, decoders, rays_d_batch, rays_o_batch,
                                             device, truncation, gt_depth=gt_depth_batch)
                 semantic_list.append(semantic)
-                rgb_list.append(rgb)
+                if not self.semantic_only:
+                    rgb_list.append(rgb)
 
             semantic = torch.cat(semantic_list, dim=0)
             semantic = semantic.reshape(H, W, -1)
 
-            rgb = torch.cat(rgb_list, dim=0)
-            rgb = rgb.reshape(H, W, -1)
+            if not self.semantic_only:
+                rgb = torch.cat(rgb_list, dim=0)
+                rgb = rgb.reshape(H, W, -1)
 
             return semantic, rgb
 
@@ -198,7 +200,7 @@ class Eval_Segmentation():
                 if not self.semantic_only:
                     sdf_uni, _ = decoders.get_raw_sdf(pts_uni_nor, all_planes[:6]) #其实只用了depth平面的信息
                 else:
-                    sdf_uni, _ = decoders.get_raw_sdf_from_semantic(pts_uni_nor, all_planes[3:]) #取后三个平面的信息
+                    sdf_uni, _ = decoders.get_raw_sdf_from_semantic(pts_uni_nor, all_planes)
                 sdf_uni = sdf_uni.reshape(*pts_uni.shape[0:2])
                 alpha_uni = self.sdf2alpha(sdf_uni, decoders.beta)
                 weights_uni = alpha_uni * torch.cumprod(torch.cat([torch.ones((alpha_uni.shape[0], 1), device=device)
@@ -214,18 +216,27 @@ class Eval_Segmentation():
 
         raw, plane_feat = decoders(pts, all_planes)
 
-        semantic_alpha = self.sdf2alpha(raw[..., 3], decoders.semantic_beta)
-        semantic_weights = semantic_alpha * torch.cumprod(
+        if not self.semantic_only:
+            semantic_alpha = self.sdf2alpha(raw[..., 3], decoders.semantic_beta)
+            semantic_weights = semantic_alpha * torch.cumprod(
+                torch.cat([torch.ones((semantic_alpha.shape[0], 1), device=device)
+                            , (1. - semantic_alpha + 1e-10)], -1), -1)[:, :-1]
+            rendered_semantic = torch.sum(semantic_weights[..., None] * raw[..., 4:], -2)
+        
+            alpha_rgb = self.sdf2alpha(raw[..., 3], decoders.beta)
+            weights_rgb = alpha_rgb * torch.cumprod(torch.cat([torch.ones((alpha_rgb.shape[0], 1), device=device)
+                                                    ,(1. - alpha_rgb + 1e-10)], -1), -1)[:, :-1]
+            rendered_rgb = torch.sum(weights_rgb[..., None] * raw[..., :3], -2)
+
+            return rendered_semantic, rendered_rgb
+        else:
+            semantic_alpha = self.sdf2alpha(raw[..., 0], decoders.semantic_beta)
+            semantic_weights = semantic_alpha * torch.cumprod(
             torch.cat([torch.ones((semantic_alpha.shape[0], 1), device=device)
                           , (1. - semantic_alpha + 1e-10)], -1), -1)[:, :-1]
-        rendered_semantic = torch.sum(semantic_weights[..., None] * raw[..., 4:], -2)
-
-        alpha_rgb = self.sdf2alpha(raw[..., 3], decoders.beta)
-        weights_rgb = alpha_rgb * torch.cumprod(torch.cat([torch.ones((alpha_rgb.shape[0], 1), device=device)
-                                                ,(1. - alpha_rgb + 1e-10)], -1), -1)[:, :-1]
-        rendered_rgb = torch.sum(weights_rgb[..., None] * raw[..., :3], -2)
-
-        return rendered_semantic, rendered_rgb
+            rendered_semantic = torch.sum(semantic_weights[..., None] * raw[..., 1:], -2)
+            
+            return rendered_semantic, None
 
     def perturbation(self, z_vals):
         mids = 0.5 * (z_vals[..., 1:] + z_vals[..., :-1])

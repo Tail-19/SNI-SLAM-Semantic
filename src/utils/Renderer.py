@@ -231,5 +231,5 @@ class Renderer(object):
                 color = color.reshape(H, W, 3)
                 ret = (depth, color, semantic)
             else:
-                ret = semantic
+                ret = semantic, None, None
             return ret

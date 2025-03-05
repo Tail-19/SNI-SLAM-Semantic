@@ -77,13 +77,13 @@ class Frame_Visualizer(object):
 
                 depth, color, semantic = self.renderer.render_img(all_planes, decoders, c2w, self.truncation,
                                                         self.device, gt_depth=gt_depth)
-
-                depth_np = depth.detach().cpu().numpy()
-                color_np = color.detach().cpu().numpy()
-                depth_residual = np.abs(gt_depth_np - depth_np)
-                depth_residual[gt_depth_np == 0.0] = 0.0
-                color_residual = np.abs(gt_color_np - color_np)
-                color_residual[gt_depth_np == 0.0] = 0.0
+                if not self.renderer.semantic_only:
+                    depth_np = depth.detach().cpu().numpy()
+                    color_np = color.detach().cpu().numpy()
+                    depth_residual = np.abs(gt_depth_np - depth_np)
+                    depth_residual[gt_depth_np == 0.0] = 0.0
+                    color_residual = np.abs(gt_color_np - color_np)
+                    color_residual[gt_depth_np == 0.0] = 0.0
 
                 if gt_sem is not None:
                     pred = semantic.detach().permute(2, 0, 1).unsqueeze(0)
@@ -116,28 +116,29 @@ class Frame_Visualizer(object):
                 axs[0, 0].set_title('GT')
                 axs[0, 1].set_title('Generated')
                 axs[0, 2].set_title('Residual')
-
-                axs[2, 0].imshow(gt_depth_np, cmap="plasma", vmin=0, vmax=max_depth)
-                axs[2, 0].set_xticks([])
-                axs[2, 0].set_yticks([])
-                axs[2, 1].imshow(depth_np, cmap="plasma", vmin=0, vmax=max_depth)
-                axs[2, 1].set_xticks([])
-                axs[2, 1].set_yticks([])
-                axs[2, 2].imshow(depth_residual, cmap="plasma", vmin=0, vmax=max_depth)
-                axs[2, 2].set_xticks([])
-                axs[2, 2].set_yticks([])
-                gt_color_np = np.clip(gt_color_np, 0, 1)
-                color_np = np.clip(color_np, 0, 1)
-                color_residual = np.clip(color_residual, 0, 1)
-                axs[1, 0].imshow(gt_color_np, cmap="plasma")
-                axs[1, 0].set_xticks([])
-                axs[1, 0].set_yticks([])
-                axs[1, 1].imshow(color_np, cmap="plasma")
-                axs[1, 1].set_xticks([])
-                axs[1, 1].set_yticks([])
-                axs[1, 2].imshow(color_residual, cmap="plasma")
-                axs[1, 2].set_xticks([])
-                axs[1, 2].set_yticks([])
+                
+                if not self.renderer.semantic_only:
+                    axs[2, 0].imshow(gt_depth_np, cmap="plasma", vmin=0, vmax=max_depth)
+                    axs[2, 0].set_xticks([])
+                    axs[2, 0].set_yticks([])
+                    axs[2, 1].imshow(depth_np, cmap="plasma", vmin=0, vmax=max_depth)
+                    axs[2, 1].set_xticks([])
+                    axs[2, 1].set_yticks([])
+                    axs[2, 2].imshow(depth_residual, cmap="plasma", vmin=0, vmax=max_depth)
+                    axs[2, 2].set_xticks([])
+                    axs[2, 2].set_yticks([])
+                    gt_color_np = np.clip(gt_color_np, 0, 1)
+                    color_np = np.clip(color_np, 0, 1)
+                    color_residual = np.clip(color_residual, 0, 1)
+                    axs[1, 0].imshow(gt_color_np, cmap="plasma")
+                    axs[1, 0].set_xticks([])
+                    axs[1, 0].set_yticks([])
+                    axs[1, 1].imshow(color_np, cmap="plasma")
+                    axs[1, 1].set_xticks([])
+                    axs[1, 1].set_yticks([])
+                    axs[1, 2].imshow(color_residual, cmap="plasma")
+                    axs[1, 2].set_xticks([])
+                    axs[1, 2].set_yticks([])
 
                 if gt_sem is not None:
                     axs[0, 0].imshow(gt_label_image, cmap="plasma")
