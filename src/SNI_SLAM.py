@@ -91,17 +91,18 @@ class SNI_SLAM():
         self.mapping_cnt.share_memory_()
 
         ## Moving feature planes and decoders to the processing device
-        for shared_planes in [self.shared_planes_xy, self.shared_planes_xz, self.shared_planes_yz]:
-            for i, plane in enumerate(shared_planes):
-                plane = plane.to(self.device)
-                plane.share_memory_()
-                shared_planes[i] = plane
+        if not self.semantic_only:
+            for shared_planes in [self.shared_planes_xy, self.shared_planes_xz, self.shared_planes_yz]:
+                for i, plane in enumerate(shared_planes):
+                    plane = plane.to(self.device)
+                    plane.share_memory_()
+                    shared_planes[i] = plane
 
-        for shared_c_planes in [self.shared_c_planes_xy, self.shared_c_planes_xz, self.shared_c_planes_yz]:
-            for i, plane in enumerate(shared_c_planes):
-                plane = plane.to(self.device)
-                plane.share_memory_()
-                shared_c_planes[i] = plane
+            for shared_c_planes in [self.shared_c_planes_xy, self.shared_c_planes_xz, self.shared_c_planes_yz]:
+                for i, plane in enumerate(shared_c_planes):
+                    plane = plane.to(self.device)
+                    plane.share_memory_()
+                    shared_c_planes[i] = plane
 
         for shared_s_planes in [self.shared_s_planes_xy, self.shared_s_planes_xz, self.shared_s_planes_yz]:
             for i, plane in enumerate(shared_s_planes):
@@ -188,14 +189,13 @@ class SNI_SLAM():
         Args:
             cfg (dict): parsed config dict.
         """
-
-        self.coarse_planes_res = cfg['planes_res']['coarse']
-        self.fine_planes_res = cfg['planes_res']['fine']
-
-        #color planes
-        self.coarse_c_planes_res = cfg['c_planes_res']['coarse']
-        self.fine_c_planes_res = cfg['c_planes_res']['fine']
-
+        if not self.semantic_only:
+            #depth planes
+            self.coarse_planes_res = cfg['planes_res']['coarse']
+            self.fine_planes_res = cfg['planes_res']['fine']
+            #color planes
+            self.coarse_c_planes_res = cfg['c_planes_res']['coarse']
+            self.fine_c_planes_res = cfg['c_planes_res']['fine']
         #semantic planes
         self.coarse_s_planes_res = cfg['s_planes_res']['coarse']
         self.fine_s_planes_res = cfg['s_planes_res']['fine']
@@ -205,30 +205,33 @@ class SNI_SLAM():
         xyz_len = self.bound[:, 1]-self.bound[:, 0] #计算边界的长度，max-min
 
         ####### Initializing Planes ############
-        planes_xy, planes_xz, planes_yz = [], [], [] #三个方向的平面
-        c_planes_xy, c_planes_xz, c_planes_yz = [], [], [] #三个方向的颜色平面
+        if not self.semantic_only:
+            planes_xy, planes_xz, planes_yz = [], [], [] #三个方向的平面
+            c_planes_xy, c_planes_xz, c_planes_yz = [], [], [] #三个方向的颜色平面
         s_planes_xy, s_planes_xz, s_planes_yz = [], [], []  # 三个方向的语义平面
-
-        planes_res = [self.coarse_planes_res, self.fine_planes_res]
-        c_planes_res = [self.coarse_c_planes_res, self.fine_c_planes_res]
+        ####### Plane Resolution ############
+        if not self.semantic_only:
+            planes_res = [self.coarse_planes_res, self.fine_planes_res]
+            c_planes_res = [self.coarse_c_planes_res, self.fine_c_planes_res]
         s_planes_res = [self.coarse_s_planes_res, self.fine_s_planes_res]
 
         planes_dim = c_dim #平面的维度等于颜色通道数
-        for grid_res in planes_res:
-            grid_shape = list(map(int, (xyz_len / grid_res).tolist()))
-            grid_shape[0], grid_shape[2] = grid_shape[2], grid_shape[0]
-            planes_xy.append(torch.empty([1, planes_dim, *grid_shape[1:]]).normal_(mean=0, std=0.01))
-            planes_xz.append(torch.empty([1, planes_dim, grid_shape[0], grid_shape[2]]).normal_(mean=0, std=0.01))
-            planes_yz.append(torch.empty([1, planes_dim, *grid_shape[:2]]).normal_(mean=0, std=0.01))
+        if not self.semantic_only:
+            for grid_res in planes_res:
+                grid_shape = list(map(int, (xyz_len / grid_res).tolist()))
+                grid_shape[0], grid_shape[2] = grid_shape[2], grid_shape[0]
+                planes_xy.append(torch.empty([1, planes_dim, *grid_shape[1:]]).normal_(mean=0, std=0.01))
+                planes_xz.append(torch.empty([1, planes_dim, grid_shape[0], grid_shape[2]]).normal_(mean=0, std=0.01))
+                planes_yz.append(torch.empty([1, planes_dim, *grid_shape[:2]]).normal_(mean=0, std=0.01))
 
-        for grid_res in c_planes_res:
-            grid_shape = list(map(int, (xyz_len / grid_res).tolist()))
-            grid_shape[0], grid_shape[2] = grid_shape[2], grid_shape[0]
-            #这里append的是一个正态分布的张量，均值为0，标准差为0.01
-            #它是对颜色平面权重的一种随机初始化，避免所有平面权重都从相同值开始，从而在训练过程中有更丰富的学习空间并能更好地收敛。
-            c_planes_xy.append(torch.empty([1, planes_dim, *grid_shape[1:]]).normal_(mean=0, std=0.01)) #创建一个正态分布的张量,均值为0，标准差为0.01,用于表示颜色平面x-y平面
-            c_planes_xz.append(torch.empty([1, planes_dim, grid_shape[0], grid_shape[2]]).normal_(mean=0, std=0.01)) #创建一个正态分布的张量,均值为0，标准差为0.01,用于表示颜色平面x-z平面
-            c_planes_yz.append(torch.empty([1, planes_dim, *grid_shape[:2]]).normal_(mean=0, std=0.01))
+            for grid_res in c_planes_res:
+                grid_shape = list(map(int, (xyz_len / grid_res).tolist()))
+                grid_shape[0], grid_shape[2] = grid_shape[2], grid_shape[0]
+                #这里append的是一个正态分布的张量，均值为0，标准差为0.01
+                #它是对颜色平面权重的一种随机初始化，避免所有平面权重都从相同值开始，从而在训练过程中有更丰富的学习空间并能更好地收敛。
+                c_planes_xy.append(torch.empty([1, planes_dim, *grid_shape[1:]]).normal_(mean=0, std=0.01)) #创建一个正态分布的张量,均值为0，标准差为0.01,用于表示颜色平面x-y平面
+                c_planes_xz.append(torch.empty([1, planes_dim, grid_shape[0], grid_shape[2]]).normal_(mean=0, std=0.01)) #创建一个正态分布的张量,均值为0，标准差为0.01,用于表示颜色平面x-z平面
+                c_planes_yz.append(torch.empty([1, planes_dim, *grid_shape[:2]]).normal_(mean=0, std=0.01))
 
         for grid_res in s_planes_res:
             grid_shape = list(map(int, (xyz_len / grid_res).tolist()))
@@ -237,13 +240,14 @@ class SNI_SLAM():
             s_planes_xz.append(torch.empty([1, planes_dim, grid_shape[0], grid_shape[2]]).normal_(mean=0, std=0.01))
             s_planes_yz.append(torch.empty([1, planes_dim, *grid_shape[:2]]).normal_(mean=0, std=0.01))
 
-        self.shared_planes_xy = planes_xy
-        self.shared_planes_xz = planes_xz
-        self.shared_planes_yz = planes_yz
+        if not self.semantic_only:
+            self.shared_planes_xy = planes_xy
+            self.shared_planes_xz = planes_xz
+            self.shared_planes_yz = planes_yz
 
-        self.shared_c_planes_xy = c_planes_xy 
-        self.shared_c_planes_xz = c_planes_xz
-        self.shared_c_planes_yz = c_planes_yz
+            self.shared_c_planes_xy = c_planes_xy 
+            self.shared_c_planes_xz = c_planes_xz
+            self.shared_c_planes_yz = c_planes_yz
 
         self.shared_s_planes_xy = s_planes_xy
         self.shared_s_planes_xz = s_planes_xz
