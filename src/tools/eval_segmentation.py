@@ -195,7 +195,10 @@ class Eval_Segmentation():
                 pts_uni = rays_o_uni.unsqueeze(1) + rays_d_uni.unsqueeze(1) * z_vals_uni.unsqueeze(-1)  # [n_rays, n_stratified, 3]
 
                 pts_uni_nor = normalize_3d_coordinate(pts_uni.clone(), self.bound)
-                sdf_uni, _ = decoders.get_raw_sdf(pts_uni_nor, all_planes[:6])
+                if not self.semantic_only:
+                    sdf_uni, _ = decoders.get_raw_sdf(pts_uni_nor, all_planes[:6]) #其实只用了depth平面的信息
+                else:
+                    sdf_uni, _ = decoders.get_raw_sdf_from_semantic(pts_uni_nor, all_planes[3:]) #取后三个平面的信息
                 sdf_uni = sdf_uni.reshape(*pts_uni.shape[0:2])
                 alpha_uni = self.sdf2alpha(sdf_uni, decoders.beta)
                 weights_uni = alpha_uni * torch.cumprod(torch.cat([torch.ones((alpha_uni.shape[0], 1), device=device)

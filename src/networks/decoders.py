@@ -62,13 +62,13 @@ class Decoders(nn.Module):
 
 
     def sample_plane_feature(self, p_nor, planes_xy, planes_xz, planes_yz):
-        vgrid = p_nor[None, :, None]
+        vgrid = p_nor[None, :, None] # vgrid is the normalized 3D coordinates of the points
         feat = []
         for i in range(len(planes_xy)):
             xy = F.grid_sample(planes_xy[i], vgrid[..., [0, 1]], padding_mode='border', align_corners=True, mode='bilinear').squeeze().transpose(0, 1)
             xz = F.grid_sample(planes_xz[i], vgrid[..., [0, 2]], padding_mode='border', align_corners=True, mode='bilinear').squeeze().transpose(0, 1)
             yz = F.grid_sample(planes_yz[i], vgrid[..., [1, 2]], padding_mode='border', align_corners=True, mode='bilinear').squeeze().transpose(0, 1)
-            feat.append(xy + xz + yz)
+            feat.append(xy + xz + yz) # feat用于存储三个平面的特征
 
         feat = torch.cat(feat, dim=-1)
 
@@ -79,12 +79,23 @@ class Decoders(nn.Module):
         feat = self.sample_plane_feature(p_nor, planes_xy, planes_xz, planes_yz)
 
         h = feat
-        for i, l in enumerate(self.linears):
-            h = self.linears[i](h)
+        for i, l in enumerate(self.linears): #h过线性层
+            h = self.linears[i](h) # h is the output of the linear layer
             h = F.relu(h, inplace=True)
         sdf = torch.tanh(self.output_linear(h)).squeeze()
-
         return sdf, feat
+    
+    #HANLU
+    def get_raw_sdf_from_semantic(self, p_nor, all_planes):
+        s_planes_xy, s_planes_xz, s_planes_yz = all_planes
+        s_feat = self.sample_plane_feature(p_nor, s_planes_xy, s_planes_xz, s_planes_yz)
+        
+        h = s_feat
+        for i, l in enumerate(self.linears): #h过线性层
+            h = self.linears[i](h) # h is the output of the linear layer
+            h = F.relu(h, inplace=True)
+        sdf = torch.tanh(self.output_linear(h)).squeeze()
+        return sdf, s_feat
 
     def get_raw_semantic(self, p_nor, all_planes):
         s_planes_xy, s_planes_xz, s_planes_yz = all_planes
@@ -101,12 +112,12 @@ class Decoders(nn.Module):
     def get_raw_sdf_rgb(self, p_nor, all_planes):
         planes_xy, planes_xz, planes_yz, c_planes_xy, c_planes_xz, c_planes_yz, s_planes_xy, s_planes_xz, s_planes_yz = all_planes
 
-        feat = self.sample_plane_feature(p_nor, planes_xy, planes_xz, planes_yz)
+        feat = self.sample_plane_feature(p_nor, planes_xy, planes_xz, planes_yz)  #feat用于存储三个平面的特征
         c_feat = self.sample_plane_feature(p_nor, c_planes_xy, c_planes_xz, c_planes_yz)
 
         s_feat = self.sample_plane_feature(p_nor, s_planes_xy, s_planes_xz, s_planes_yz)
 
-        h = feat
+        h = feat 
         for i, l in enumerate(self.fused_linear):
             h = self.fused_linear[i](h)
             h = F.relu(h, inplace=True)
@@ -118,18 +129,36 @@ class Decoders(nn.Module):
 
         rgb = torch.sigmoid(self.out_rgb(h))
 
-        return sdf, rgb, feat, c_feat
+        return sdf, rgb, feat, c_feat #?这返回的feat为什么不是sdf的feat 理解了 这里要的就是原feature
+    
+    #HANLU
+    def get_raw_sdf_from_semantic(self, p_nor, all_planes):
+        s_planes_xy, s_planes_xz, s_planes_yz = all_planes 
+        feat = self.sample_plane_feature(p_nor, s_planes_xy, s_planes_xz, s_planes_yz)
+        
+        h = feat 
+        for i, l in enumerate(self.fused_linear):
+            h = self.fused_linear[i](h)
+            h = F.relu(h, inplace=True)
+        sdf_out = self.out_sdf(h)
+        sdf = torch.tanh(sdf_out[:, :1]).squeeze()
+        
+        return sdf, feat
 
-
-    def forward(self, p, all_planes):
+    def forward(self, p, all_planes, semantic_only=False):
         p_shape = p.shape
         p_nor = normalize_3d_coordinate(p.clone(), self.bound)
+        if not self.semantic_only:
+            rgb, rgb_feat, sdf, sdf_feat = self.get_raw_sdf_rgb(p_nor, all_planes[:6])
+            semantic, semantic_feat = self.get_raw_semantic(p_nor, all_planes[6:])
+            raw = torch.cat([rgb, sdf.unsqueeze(-1), semantic], dim=-1)
+            plane_feat = torch.cat([rgb_feat[:, self.c_dim:], sdf_feat[:, self.c_dim:], semantic_feat[:, self.c_dim:]], dim=-1)
 
-        sdf, rgb, sdf_feat, rgb_feat = self.get_raw_sdf_rgb(p_nor, all_planes)
-
-        semantic, semantic_feat = self.get_raw_semantic(p_nor, all_planes[6:])
-        raw = torch.cat([rgb, sdf.unsqueeze(-1), semantic], dim=-1)
-        plane_feat = torch.cat([rgb_feat[:, self.c_dim:], sdf_feat[:, self.c_dim:], semantic_feat[:, self.c_dim:]], dim=-1)
+        else:
+            sdf, sdf_feat = self.get_raw_sdf_from_semantic(p_nor, all_planes)
+            semantic, semantic_feat = self.get_raw_semantic(p_nor, all_planes)
+            raw = torch.cat([sdf.unsqueeze(-1), semantic], dim=-1)
+            plane_feat = torch.cat([sdf_feat[:, self.c_dim:], semantic_feat[:, self.c_dim:]], dim=-1)
 
         raw = raw.reshape(*p_shape[:-1], -1)
 

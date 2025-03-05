@@ -17,6 +17,7 @@ class Tracker(object):
     def __init__(self, cfg, args, sni):
         self.cfg = cfg
         self.args = args
+        self.semantic_only = sni.semantic_only
 
         self.scale = cfg['scale']
 
@@ -33,21 +34,22 @@ class Tracker(object):
         self.estimate_c2w_list = sni.estimate_c2w_list
         self.truncation = sni.truncation
 
-        self.shared_planes_xy = sni.shared_planes_xy
-        self.shared_planes_xz = sni.shared_planes_xz
-        self.shared_planes_yz = sni.shared_planes_yz
+        if not self.semantic_only:
+            self.shared_planes_xy = sni.shared_planes_xy
+            self.shared_planes_xz = sni.shared_planes_xz
+            self.shared_planes_yz = sni.shared_planes_yz
 
-        self.shared_c_planes_xy = sni.shared_c_planes_xy
-        self.shared_c_planes_xz = sni.shared_c_planes_xz
-        self.shared_c_planes_yz = sni.shared_c_planes_yz
+            self.shared_c_planes_xy = sni.shared_c_planes_xy
+            self.shared_c_planes_xz = sni.shared_c_planes_xz
+            self.shared_c_planes_yz = sni.shared_c_planes_yz
+            
+        self.shared_s_planes_xy = sni.shared_s_planes_xy
+        self.shared_s_planes_xz = sni.shared_s_planes_xz
+        self.shared_s_planes_yz = sni.shared_s_planes_yz
 
         self.enable_wandb = cfg['func']['enable_wandb']
         if self.enable_wandb:
             self.wandb_run = sni.wandb_run
-
-        self.shared_s_planes_xy = sni.shared_s_planes_xy
-        self.shared_s_planes_xz = sni.shared_s_planes_xz
-        self.shared_s_planes_yz = sni.shared_s_planes_yz
 
         self.w_semantic = cfg['tracking']['w_semantic']
 
@@ -62,8 +64,8 @@ class Tracker(object):
         self.w_sdf_fs = cfg['tracking']['w_sdf_fs']
         self.w_sdf_center = cfg['tracking']['w_sdf_center']
         self.w_sdf_tail = cfg['tracking']['w_sdf_tail']
-        self.w_depth = cfg['tracking']['w_depth']
-        self.w_color = cfg['tracking']['w_color']
+        self.w_depth = cfg['tracking']['w_depth'] # weight for depth loss = 1
+        self.w_color = cfg['tracking']['w_color'] # weight for color loss = 5
         self.ignore_edge_W = cfg['tracking']['ignore_edge_W']
         self.ignore_edge_H = cfg['tracking']['ignore_edge_H']
         self.const_speed_assumption = cfg['tracking']['const_speed_assumption']
@@ -88,13 +90,14 @@ class Tracker(object):
 
         self.decoders = copy.deepcopy(self.shared_decoders)
 
-        self.planes_xy = copy.deepcopy(self.shared_planes_xy)
-        self.planes_xz = copy.deepcopy(self.shared_planes_xz)
-        self.planes_yz = copy.deepcopy(self.shared_planes_yz)
+        if not self.semantic_only:
+            self.planes_xy = copy.deepcopy(self.shared_planes_xy)
+            self.planes_xz = copy.deepcopy(self.shared_planes_xz)
+            self.planes_yz = copy.deepcopy(self.shared_planes_yz)
 
-        self.c_planes_xy = copy.deepcopy(self.shared_c_planes_xy)
-        self.c_planes_xz = copy.deepcopy(self.shared_c_planes_xz)
-        self.c_planes_yz = copy.deepcopy(self.shared_c_planes_yz)
+            self.c_planes_xy = copy.deepcopy(self.shared_c_planes_xy)
+            self.c_planes_xz = copy.deepcopy(self.shared_c_planes_xz)
+            self.c_planes_yz = copy.deepcopy(self.shared_c_planes_yz)
 
         self.s_planes_xy = copy.deepcopy(self.shared_s_planes_xy)
         self.s_planes_xz = copy.deepcopy(self.shared_s_planes_xz)
@@ -197,9 +200,9 @@ class Tracker(object):
         if self.verbose:
             start_time = time.time()
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        optimizer.zero_grad() #清空梯度
+        loss.backward() #反向传播
+        optimizer.step() #优化器更新参数
 
         if self.verbose:
             end_time = time.time()
@@ -228,17 +231,18 @@ class Tracker(object):
 
             self.decoders.load_state_dict(self.shared_decoders.state_dict())
 
-            for planes, self_planes in zip(
-                    [self.shared_planes_xy, self.shared_planes_xz, self.shared_planes_yz],
-                    [self.planes_xy, self.planes_xz, self.planes_yz]):
-                for i, plane in enumerate(planes):
-                    self_planes[i] = plane.detach()
+            if not self.semantic_only:
+                for planes, self_planes in zip(
+                        [self.shared_planes_xy, self.shared_planes_xz, self.shared_planes_yz],
+                        [self.planes_xy, self.planes_xz, self.planes_yz]):
+                    for i, plane in enumerate(planes):
+                        self_planes[i] = plane.detach()
 
-            for c_planes, self_c_planes in zip(
-                    [self.shared_c_planes_xy, self.shared_c_planes_xz, self.shared_c_planes_yz],
-                    [self.c_planes_xy, self.c_planes_xz, self.c_planes_yz]):
-                for i, c_plane in enumerate(c_planes):
-                    self_c_planes[i] = c_plane.detach()
+                for c_planes, self_c_planes in zip(
+                        [self.shared_c_planes_xy, self.shared_c_planes_xz, self.shared_c_planes_yz],
+                        [self.c_planes_xy, self.c_planes_xz, self.c_planes_yz]):
+                    for i, c_plane in enumerate(c_planes):
+                        self_c_planes[i] = c_plane.detach()
 
             for s_planes, self_s_planes in zip(
                     [self.shared_s_planes_xy, self.shared_s_planes_xz, self.shared_s_planes_yz],
@@ -251,9 +255,12 @@ class Tracker(object):
     def run(self):
         device = self.device
 
-        all_planes = (self.planes_xy, self.planes_xz, self.planes_yz,
-                      self.c_planes_xy, self.c_planes_xz, self.c_planes_yz,
-                      self.s_planes_xy, self.s_planes_xz, self.s_planes_yz)
+        if not self.semantic_only:
+            all_planes = (self.planes_xy, self.planes_xz, self.planes_yz,
+                        self.c_planes_xy, self.c_planes_xz, self.c_planes_yz,
+                        self.s_planes_xy, self.s_planes_xz, self.s_planes_yz)
+        else:
+            all_planes = (self.s_planes_xy, self.s_planes_xz, self.s_planes_yz)    
 
 
         pbar = tqdm(self.frame_loader, smoothing=0.05)

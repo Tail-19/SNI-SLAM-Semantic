@@ -27,6 +27,8 @@ class Renderer(object):
     def __init__(self, cfg, sni, ray_batch_size=10000):
         self.ray_batch_size = ray_batch_size #
 
+        self.semantic_only = sni.semantic_only
+        
         self.perturb = cfg['rendering']['perturb']
         self.n_stratified = cfg['rendering']['n_stratified']
         self.n_importance = cfg['rendering']['n_importance']
@@ -104,7 +106,10 @@ class Renderer(object):
                 pts_uni = rays_o_uni.unsqueeze(1) + rays_d_uni.unsqueeze(1) * z_vals_uni.unsqueeze(-1)
 
                 pts_uni_nor = normalize_3d_coordinate(pts_uni.clone(), self.bound)
-                sdf_uni, _ = decoders.get_raw_sdf(pts_uni_nor, all_planes[:6])
+                if not self.semantic_only:
+                    sdf_uni, _ = decoders.get_raw_sdf(pts_uni_nor, all_planes[:6]) #其实只用了depth平面的信息
+                else:
+                    sdf_uni, _ = decoders.get_raw_sdf_from_semantic(pts_uni_nor, all_planes) #取后三个平面的信息
                 sdf_uni = sdf_uni.reshape(*pts_uni.shape[0:2])
                 alpha_uni = self.sdf2alpha(sdf_uni, decoders.beta)
                 weights_uni = alpha_uni * torch.cumprod(torch.cat([torch.ones((alpha_uni.shape[0], 1), device=device)
@@ -132,14 +137,14 @@ class Renderer(object):
             fused_feat = fused_feat.reshape(-1, fused_feat.shape[-1])
 
         # -----> NeRF network 
-        raw, plane_feat = decoders(pts, all_planes) # 
+        raw, plane_feat = decoders(pts, all_planes, self.semantic_only) #HANLU
         alpha = self.sdf2alpha(raw[..., 3], decoders.beta)
         weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1), device=device)
                                                 ,(1. - alpha + 1e-10)], -1), -1)[:, :-1]
 
         rendered_rgb = torch.sum(weights[..., None] * raw[..., :3], -2)
         rendered_depth = torch.sum(weights * z_vals, -1)
-        rendered_semantic = torch.sum(weights[..., None].detach() * raw[..., 4:], -2)
+        rendered_semantic = torch.sum(weights[..., None].detach() * raw[..., 4:], -2) #这里返回了但是没有使用
 
         if self.enable_wandb:
             log_dict = {
@@ -148,7 +153,7 @@ class Renderer(object):
 
             log_dict["semantic_beta"] = decoders.semantic_beta.detach().item()
             self.wandb_run.log(log_dict)
-
+        
         return (rendered_depth, rendered_rgb, raw[..., 3], z_vals, fused_feat if return_emb else None,
                 plane_feat if return_emb else None, rendered_semantic)
 
