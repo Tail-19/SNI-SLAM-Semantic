@@ -138,14 +138,20 @@ class Renderer(object):
 
         # -----> NeRF network 
         raw, plane_feat = decoders(pts, all_planes, self.semantic_only) #HANLU
-        alpha = self.sdf2alpha(raw[..., 3], decoders.beta)
+        if not self.semantic_only:
+            alpha = self.sdf2alpha(raw[..., 3], decoders.beta)
+        else:
+            alpha = self.sdf2alpha(raw[..., 0], decoders.beta)
         weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1), device=device)
                                                 ,(1. - alpha + 1e-10)], -1), -1)[:, :-1]
 
-        rendered_rgb = torch.sum(weights[..., None] * raw[..., :3], -2)
-        rendered_depth = torch.sum(weights * z_vals, -1)
-        rendered_semantic = torch.sum(weights[..., None].detach() * raw[..., 4:], -2) #这里返回了但是没有使用
-
+        if not self.semantic_only:
+            rendered_rgb = torch.sum(weights[..., None] * raw[..., :3], -2)
+            rendered_depth = torch.sum(weights * z_vals, -1)
+            rendered_semantic = torch.sum(weights[..., None].detach() * raw[..., 4:], -2) #这里后面返回了但是没有使用
+        else:
+            rendered_semantic = torch.sum(weights[..., None].detach() * raw[..., 1:], -2)
+            
         if self.enable_wandb:
             log_dict = {
                 "beta": decoders.beta.detach().item()
@@ -154,7 +160,11 @@ class Renderer(object):
             log_dict["semantic_beta"] = decoders.semantic_beta.detach().item()
             self.wandb_run.log(log_dict)
         
-        return (rendered_depth, rendered_rgb, raw[..., 3], z_vals, fused_feat if return_emb else None,
+        if not self.semantic_only:
+            return (rendered_depth, rendered_rgb, raw[..., 3], z_vals, fused_feat if return_emb else None,
+                plane_feat if return_emb else None, rendered_semantic)
+        else:
+            return (raw[..., 0], z_vals, fused_feat if return_emb else None,
                 plane_feat if return_emb else None, rendered_semantic)
 
     def sdf2alpha(self, sdf, beta=10):
@@ -200,19 +210,26 @@ class Renderer(object):
                     gt_depth_batch = gt_depth[i:i+ray_batch_size]
                     ret = self.render_batch_ray(all_planes, decoders, rays_d_batch, rays_o_batch,
                                                 device, truncation, gt_depth=gt_depth_batch)
-
-                depth, color, _, _, _, _, semantic = ret
-                depth_list.append(depth.double()) 
-                color_list.append(color)
-                semantic_list.append(semantic)
-
-            depth = torch.cat(depth_list, dim=0)
-            color = torch.cat(color_list, dim=0)
+                if not self.semantic_only:
+                    depth, color, _, _, _, _, semantic = ret
+                    depth_list.append(depth.double()) 
+                    color_list.append(color)
+                    semantic_list.append(semantic)
+                else:
+                    _, _, _, _, semantic = ret
+                    semantic_list.append(semantic)
+    
+            if not self.semantic_only:
+                depth = torch.cat(depth_list, dim=0)
+                color = torch.cat(color_list, dim=0)
 
             semantic = torch.cat(semantic_list, dim=0)
             semantic = semantic.reshape(H, W, -1)
 
-            depth = depth.reshape(H, W)
-            color = color.reshape(H, W, 3)
-
-            return depth, color, semantic
+            if not self.semantic_only:
+                depth = depth.reshape(H, W)
+                color = color.reshape(H, W, 3)
+                ret = (depth, color, semantic)
+            else:
+                ret = semantic
+            return ret
