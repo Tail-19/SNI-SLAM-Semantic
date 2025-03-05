@@ -216,16 +216,24 @@ class Tracker(object):
             end_time = time.time()
             print(f"tracking: {(end_time - start_time)*1000} ms")
 
-        if self.enable_wandb:
-            log_dict = {
-                "tracking_total_loss": loss.item(),
-                "tracking_sdf_loss": sdf_loss.item(),
-                "tracking_color_loss": color_loss.item(),
-                "tracking_depth_loss": depth_loss.item(),
-            }
-            # if self.use_semantic_loss:
-            #     log_dict["tracking_semantic_loss"] = semantic_loss.item()
-            self.wandb_run.log(log_dict)
+        if not self.semantic_only:
+            if self.enable_wandb:
+                log_dict = {
+                    "tracking_total_loss": loss.item(),
+                    "tracking_sdf_loss": sdf_loss.item(),
+                    "tracking_color_loss": color_loss.item(),
+                    "tracking_depth_loss": depth_loss.item(),
+                }
+                # if self.use_semantic_loss:
+                #     log_dict["tracking_semantic_loss"] = semantic_loss.item()
+                self.wandb_run.log(log_dict)
+        else:
+            if self.enable_wandb:
+                log_dict = {
+                    "tracking_total_loss": loss.item(),
+                    "tracking_sdf_loss": sdf_loss.item(),
+                }
+                self.wandb_run.log(log_dict)
 
         return loss.item()
 

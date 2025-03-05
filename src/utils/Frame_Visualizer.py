@@ -67,8 +67,9 @@ class Frame_Visualizer(object):
         """
         with torch.no_grad():
             if (idx % self.freq == 0) and (iter % self.inside_freq == 0):
-                gt_depth_np = gt_depth.squeeze(0).cpu().numpy()
-                gt_color_np = gt_color.squeeze(0).cpu().numpy()
+                if not self.renderer.semantic_only:
+                    gt_depth_np = gt_depth.squeeze(0).cpu().numpy()
+                    gt_color_np = gt_color.squeeze(0).cpu().numpy()
 
                 if c2w_or_camera_tensor.shape[-1] > 4: ## 6od
                     c2w = cam_pose_to_matrix(c2w_or_camera_tensor.clone().detach()).squeeze()
@@ -156,9 +157,12 @@ class Frame_Visualizer(object):
                 plt.savefig(f'{self.vis_dir}/{idx:05d}_{iter:04d}.jpg', bbox_inches='tight', pad_inches=0.2, dpi=300)
                 plt.cla()
                 plt.clf()
-
-                if self.verbose:
-                    print(f'Saved rendering visualization of color/depth image at {self.vis_dir}/{idx:05d}_{iter:04d}.jpg')
+                if self.renderer.semantic_only:
+                    if self.verbose:
+                        print(f'Saved rendering visualization of color/depth image at {self.vis_dir}/{idx:05d}_{iter:04d}.jpg')
+                else:
+                    if self.verbose:
+                        print(f'Saved rendering visualization of semantic image at {self.vis_dir}/{idx:05d}_{iter:04d}.jpg')    
 
     def decode_segmap(self, image, nc=25):
         label_colors = np.array([(0, 0, 0),  # 0=background
