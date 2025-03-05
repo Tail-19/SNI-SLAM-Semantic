@@ -25,6 +25,7 @@ class Mapper(object):
 
         self.cfg = cfg
         self.args = args
+        self.semantic_only = sni.semantic_only
 
         #get all the shared variables from SNI_SLAM
         self.idx = sni.idx # shared idx
@@ -39,13 +40,14 @@ class Mapper(object):
         self.mapping_cnt = sni.mapping_cnt
         self.decoders = sni.shared_decoders
 
-        self.planes_xy = sni.shared_planes_xy
-        self.planes_xz = sni.shared_planes_xz
-        self.planes_yz = sni.shared_planes_yz
- # -----> COLOR 
-        self.c_planes_xy = sni.shared_c_planes_xy
-        self.c_planes_xz = sni.shared_c_planes_xz
-        self.c_planes_yz = sni.shared_c_planes_yz
+        if not self.semantic_only:
+            self.planes_xy = sni.shared_planes_xy
+            self.planes_xz = sni.shared_planes_xz
+            self.planes_yz = sni.shared_planes_yz
+    # -----> COLOR 
+            self.c_planes_xy = sni.shared_c_planes_xy
+            self.c_planes_xz = sni.shared_c_planes_xz
+            self.c_planes_yz = sni.shared_c_planes_yz
 
         self.use_gt_semantic = cfg['func']['use_gt_semantic']
 
@@ -207,9 +209,13 @@ class Mapper(object):
 # -----> COLOR
     def optimize_mapping(self, iters, lr_factor, idx, cur_gt_color, cur_gt_depth, gt_cur_c2w, cur_sem_feat,
                          cur_sem_label, gt_label, keyframe_dict, keyframe_list, cur_c2w):
-        all_planes = (self.planes_xy, self.planes_xz, self.planes_yz,
+        if not self.semantic_only:
+            all_planes = (self.planes_xy, self.planes_xz, self.planes_yz,
                       self.c_planes_xy, self.c_planes_xz, self.c_planes_yz,
                       self.s_planes_xy, self.s_planes_xz, self.s_planes_yz)
+        else:
+            all_planes = (self.s_planes_xy, self.s_planes_xz, self.s_planes_yz)
+            
         H, W, fx, fy, cx, cy = self.H, self.W, self.fx, self.fy, self.cx, self.cy
         cfg = self.cfg
         device = self.device
@@ -234,18 +240,19 @@ class Mapper(object):
         # Prepare the parameters for optimization
         decoders_para_list = []
         decoders_para_list += list(self.decoders.parameters())
-        planes_para = []
-        for planes in [self.planes_xy, self.planes_xz, self.planes_yz]:
-            for i, plane in enumerate(planes):
-                plane = nn.Parameter(plane)
-                planes_para.append(plane)
-                planes[i] = plane
-        c_planes_para = []
-        for c_planes in [self.c_planes_xy, self.c_planes_xz, self.c_planes_yz]:
-            for i, c_plane in enumerate(c_planes):
-                c_plane = nn.Parameter(c_plane)
-                c_planes_para.append(c_plane)
-                c_planes[i] = c_plane
+        if not self.semantic_only:
+            planes_para = []
+            for planes in [self.planes_xy, self.planes_xz, self.planes_yz]:
+                for i, plane in enumerate(planes):
+                    plane = nn.Parameter(plane)
+                    planes_para.append(plane)
+                    planes[i] = plane
+            c_planes_para = []
+            for c_planes in [self.c_planes_xy, self.c_planes_xz, self.c_planes_yz]:
+                for i, c_plane in enumerate(c_planes):
+                    c_plane = nn.Parameter(c_plane)
+                    c_planes_para.append(c_plane)
+                    c_planes[i] = c_plane
         s_planes_para = []
         for s_planes in [self.s_planes_xy, self.s_planes_xz, self.s_planes_yz]:
             for i, s_plane in enumerate(s_planes):
@@ -273,42 +280,59 @@ class Mapper(object):
         gt_colors = torch.stack(gt_colors, dim=0)
         c2ws = torch.stack(c2ws, dim=0)
 
+        #key frame  
         kf_sem_feats = []
-        kf_rgb_feats = []
+        if not self.semantic_only:
+            kf_rgb_feats = []
         kf_gt_label = []
         for frame in optimize_frame:
             if frame != -1:
                 sem_feat = keyframe_dict[frame]['sem_feat'].to(device)
-                rgb_feat = self.model_manager.head(sem_feat)
+                if not self.semantic_only:
+                    rgb_feat = self.model_manager.head(sem_feat)
+                    kf_rgb_feats.append(rgb_feat.squeeze(0))
                 kf_sem_feats.append(sem_feat.squeeze(0))
-                kf_rgb_feats.append(rgb_feat.squeeze(0))
-
                 gt_sem_label = keyframe_dict[frame]['gt_sem_label'].to(device)
                 kf_gt_label.append(gt_sem_label)
 
             else:
-                rgb_feat = self.model_manager.head(cur_sem_feat)
+                if not self.semantic_only:
+                    rgb_feat = self.model_manager.head(cur_sem_feat)
+                    kf_rgb_feats.append(rgb_feat.squeeze(0))
                 kf_sem_feats.append(cur_sem_feat.squeeze(0))
-                kf_rgb_feats.append(rgb_feat.squeeze(0))
                 kf_gt_label.append(cur_sem_label)
 
         kf_sem_feats = torch.stack(kf_sem_feats, dim=0)
-        kf_rgb_feats = torch.stack(kf_rgb_feats, dim=0)
+        if not self.semantic_only:
+            kf_rgb_feats = torch.stack(kf_rgb_feats, dim=0)
         kf_gt_label = torch.stack(kf_gt_label, dim=0)
 
-        if self.joint_opt:
-            cam_poses = nn.Parameter(matrix_to_cam_pose(c2ws[1:]))
+        if not self.semantic_only:
+            if self.joint_opt:
+                cam_poses = nn.Parameter(matrix_to_cam_pose(c2ws[1:]))
+        
+                model_paras = [{'params': decoders_para_list, 'lr': 0},
+                            {'params': planes_para, 'lr': 0},
+                            {'params': c_planes_para, 'lr': 0},
+                            {'params': [cam_poses], 'lr': 0}]
 
-            model_paras = [{'params': decoders_para_list, 'lr': 0},
-                           {'params': planes_para, 'lr': 0},
-                           {'params': c_planes_para, 'lr': 0},
-                           {'params': [cam_poses], 'lr': 0}]
-
+            else:
+                model_paras = [{'params': decoders_para_list, 'lr': 0},
+                            {'params': planes_para, 'lr': 0},
+                            {'params': c_planes_para, 'lr': 0}]
         else:
-            model_paras = [{'params': decoders_para_list, 'lr': 0},
-                           {'params': planes_para, 'lr': 0},
-                           {'params': c_planes_para, 'lr': 0}]
+            if self.joint_opt:
+                cam_poses = nn.Parameter(matrix_to_cam_pose(c2ws[1:]))
+        
+                model_paras = [{'params': decoders_para_list, 'lr': 0},
+                            {'params': planes_para, 'lr': 0},
+                            {'params': [cam_poses], 'lr': 0}]
 
+            else:
+                model_paras = [{'params': decoders_para_list, 'lr': 0},
+                            {'params': planes_para, 'lr': 0}]
+
+        #Here is the semantic plane parameters and NeRF parameters
         model_paras.append({'params': s_planes_para, 'lr': 5e-3})
         model_paras.append({'params': self.model_manager.encoder.parameters(), 'lr': 3e-3})
         model_paras.append({'params': self.model_manager.head.parameters(), 'lr': 3e-3})
@@ -317,7 +341,8 @@ class Mapper(object):
         optimizer = torch.optim.Adam(model_paras)
         optimizer.param_groups[0]['lr'] = cfg['mapping']['lr']['decoders_lr'] * lr_factor
         optimizer.param_groups[1]['lr'] = cfg['mapping']['lr']['planes_lr'] * lr_factor
-        optimizer.param_groups[2]['lr'] = cfg['mapping']['lr']['c_planes_lr'] * lr_factor
+        if not self.semantic_only:
+            optimizer.param_groups[2]['lr'] = cfg['mapping']['lr']['c_planes_lr'] * lr_factor
 
         if self.joint_opt:
             optimizer.param_groups[3]['lr'] = self.joint_opt_cam_lr
@@ -335,28 +360,39 @@ class Mapper(object):
                 c2ws_ = torch.cat([c2ws[0:1], cam_pose_to_matrix(cam_poses)], dim=0)
             else:
                 c2ws_ = c2ws
-
-            batch_rays_o, batch_rays_d, batch_gt_depth, batch_gt_color, batch_sem_feats, batch_rgb_feats, batch_gt_label = get_samples(
-                0, H, 0, W, pixs_per_image, H, W, fx, fy, cx, cy, c2ws_, gt_depths, gt_colors,
-                sem_feats=kf_sem_feats, rgb_feats=kf_rgb_feats, gt_label=kf_gt_label, device=device, dim=self.c_dim)
-
-            depth, color, sdf, z_vals, gt_feat, plane_feat, render_semantic = self.renderer.render_batch_ray(all_planes, self.decoders,
-                                                            batch_rays_d, batch_rays_o, device, self.truncation, gt_depth=batch_gt_depth,
-                                                            sem_feats=batch_sem_feats, rgb_feats=batch_rgb_feats,
-                                                            return_emb=True)
+            if not self.semantic_only:
+                batch_rays_o, batch_rays_d, batch_gt_depth, batch_gt_color, batch_sem_feats, batch_rgb_feats, batch_gt_label = get_samples(
+                    0, H, 0, W, pixs_per_image, H, W, fx, fy, cx, cy, c2ws_, gt_depths, gt_colors,
+                    sem_feats=kf_sem_feats, rgb_feats=kf_rgb_feats, gt_label=kf_gt_label, device=device, dim=self.c_dim)
+                
+                depth, color, sdf, z_vals, gt_feat, plane_feat, render_semantic = self.renderer.render_batch_ray(all_planes, self.decoders,
+                                                batch_rays_d, batch_rays_o, device, self.truncation, gt_depth=batch_gt_depth,
+                                                sem_feats=batch_sem_feats, rgb_feats=batch_rgb_feats,
+                                                return_emb=True)
+            else:
+                batch_rays_o, batch_rays_d, batch_gt_depth, batch_gt_color, batch_sem_feats, batch_rgb_feats, batch_gt_label = get_samples(
+                    0, H, 0, W, pixs_per_image, H, W, fx, fy, cx, cy, c2ws_, gt_depths, gt_colors,
+                    sem_feats=kf_sem_feats, rgb_feats=None, gt_label=kf_gt_label, device=device, dim=self.c_dim)
+                
+                sdf, z_vals, gt_feat, plane_feat, render_semantic = self.renderer.render_batch_ray(all_planes, self.decoders,
+                                                                batch_rays_d, batch_rays_o, device, self.truncation, gt_depth=batch_gt_depth,
+                                                                sem_feats=batch_sem_feats, rgb_feats=batch_rgb_feats,
+                                                                return_emb=True)
             depth_mask = (batch_gt_depth > 0)
 
             ## SDF losses
             sdf_loss = self.sdf_losses(sdf[depth_mask], z_vals[depth_mask], batch_gt_depth[depth_mask])
             loss = sdf_loss
+            
+            if not self.semantic_only:
 
-            ## Color loss
-            color_loss = self.w_color * torch.square(batch_gt_color - color).mean()
-            loss = loss + color_loss
+                ## Color loss
+                color_loss = self.w_color * torch.square(batch_gt_color - color).mean()
+                loss = loss + color_loss
 
-            ### Depth loss
-            depth_loss = self.w_depth * torch.square(batch_gt_depth[depth_mask] - depth[depth_mask]).mean()
-            loss = loss + depth_loss
+                ### Depth loss
+                depth_loss = self.w_depth * torch.square(batch_gt_depth[depth_mask] - depth[depth_mask]).mean()
+                loss = loss + depth_loss
 
             ### feature loss
             plane_feature = plane_feat.detach()
@@ -375,12 +411,13 @@ class Mapper(object):
             if self.verbose:
                 end_time = time.time()
                 print(f"mapping: {(end_time - start_time)*1000} ms")
-
+        
             if self.enable_wandb:
+                if not self.semantic_only:
+                    log_dict["color_loss"] = color_loss.item()
                 log_dict = {
                     "total_loss": loss.item(),
                     "sdf_loss": sdf_loss.item(),
-                    "color_loss": color_loss.item(),
                     "depth_loss": depth_loss.item(),
                 }
 
@@ -415,11 +452,14 @@ class Mapper(object):
 
     def run(self):
         cfg = self.cfg
-
-        all_planes = (
-            self.planes_xy, self.planes_xz, self.planes_yz,
-            self.c_planes_xy, self.c_planes_xz, self.c_planes_yz,
-            self.s_planes_xy, self.s_planes_xz, self.s_planes_yz)
+        if not self.semantic_only:
+            all_planes = (
+                self.planes_xy, self.planes_xz, self.planes_yz,
+                self.c_planes_xy, self.c_planes_xz, self.c_planes_yz,
+                self.s_planes_xy, self.s_planes_xz, self.s_planes_yz)
+        else:
+            all_planes = (
+                self.s_planes_xy, self.s_planes_xz, self.s_planes_yz)
 
         idx, gt_color, gt_depth, gt_c2w, gt_semantic = self.frame_reader[0]
         data_iterator = iter(self.frame_loader)
@@ -464,7 +504,7 @@ class Mapper(object):
             with torch.no_grad():
                 frame_rgb = gt_color.permute(2, 0, 1).unsqueeze(0).to(self.device)  # net_rgb:[1,16,680,1200]
                 self.model_manager.set_mode_feature()
-                sem_feat = self.model_manager.cnn(frame_rgb)
+                sem_feat = self.model_manager.cnn(frame_rgb) #获得当前帧的语义特征
 
                 if self.use_gt_semantic:
                     gt_sem_label = gt_semantic
@@ -504,21 +544,33 @@ class Mapper(object):
 
             self.mapping_idx[0] = idx
             self.mapping_cnt[0] += 1
+            
+            if not self.semantic_only:
+                if (idx % self.mesh_freq == 0) and (not (idx == 0 and self.no_mesh_on_first_frame)):
+                    # mesh_out_file = f'{self.output}/mesh/{idx:05d}_mesh_sem.ply'
+                    # self.mesher.get_mesh(mesh_out_file, all_planes, self.decoders, self.keyframe_dict, self.device)
+                    # cull_mesh(mesh_out_file, self.cfg, self.args, self.device, estimate_c2w_list=self.estimate_c2w_list[:idx+1])
+                    mesh_out_semantic = f'{self.output}/mesh/{idx:05d}_mesh_sem.ply'
+                    mesh_out_color = f'{self.output}/mesh/{idx:05d}_mesh_rgb.ply'
+                    self.mesher.get_mesh(mesh_out_color, all_planes, self.decoders, self.keyframe_dict, self.device, mesh_out_semantic=mesh_out_semantic, color=False)
 
-            if (idx % self.mesh_freq == 0) and (not (idx == 0 and self.no_mesh_on_first_frame)):
-                # mesh_out_file = f'{self.output}/mesh/{idx:05d}_mesh_sem.ply'
-                # self.mesher.get_mesh(mesh_out_file, all_planes, self.decoders, self.keyframe_dict, self.device)
-                # cull_mesh(mesh_out_file, self.cfg, self.args, self.device, estimate_c2w_list=self.estimate_c2w_list[:idx+1])
-                mesh_out_semantic = f'{self.output}/mesh/{idx:05d}_mesh_sem.ply'
-                mesh_out_color = f'{self.output}/mesh/{idx:05d}_mesh_rgb.ply'
-                self.mesher.get_mesh(mesh_out_color, all_planes, self.decoders, self.keyframe_dict, self.device, mesh_out_semantic=mesh_out_semantic, color=False)
+                if idx == self.n_img-1:
+                    mesh_out_semantic = f'{self.output}/mesh/final_mesh_semantic.ply'
+                    mesh_out_color = f'{self.output}/mesh/final_mesh_color.ply'
+                    self.mesher.get_mesh(mesh_out_color, all_planes, self.decoders, self.keyframe_dict, self.device, mesh_out_semantic=mesh_out_semantic, semantic=False)
+                    cull_mesh(mesh_out_color, self.cfg, self.args, self.device, estimate_c2w_list=self.estimate_c2w_list)
+                    break
+            else:
+                if (idx % self.mesh_freq == 0) and (not (idx == 0 and self.no_mesh_on_first_frame)):
+ 
+                    mesh_out_semantic = f'{self.output}/mesh/{idx:05d}_mesh_sem.ply'
+                    self.mesher.get_mesh(all_planes, self.decoders, self.keyframe_dict, self.device, mesh_out_color = None, mesh_out_semantic=mesh_out_semantic, color=False)
 
-            if idx == self.n_img-1:
-                mesh_out_semantic = f'{self.output}/mesh/final_mesh_semantic.ply'
-                mesh_out_color = f'{self.output}/mesh/final_mesh_color.ply'
-                self.mesher.get_mesh(mesh_out_color, all_planes, self.decoders, self.keyframe_dict, self.device, mesh_out_semantic=mesh_out_semantic, semantic=False)
-                cull_mesh(mesh_out_color, self.cfg, self.args, self.device, estimate_c2w_list=self.estimate_c2w_list)
-                break
+                if idx == self.n_img-1: #如果是最后一帧，就输出最终的mesh，然后cull
+                    mesh_out_semantic = f'{self.output}/mesh/final_mesh_semantic.ply'
+                    self.mesher.get_mesh(all_planes, self.decoders, self.keyframe_dict, self.device, mesh_out_color = None, mesh_out_semantic=mesh_out_semantic, color=False)
+                    cull_mesh(mesh_out_semantic, self.cfg, self.args, self.device, estimate_c2w_list=self.estimate_c2w_list)
+                    break
 
             if idx == self.n_img-1:
                 break

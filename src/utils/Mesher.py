@@ -29,6 +29,8 @@ from src.utils.datasets import get_dataset
 
 class Mesher(object):
     def __init__(self, cfg, args, sni, points_batch_size=500000, ray_batch_size=100000):
+        self.semantic_only = sni.semantic_only
+        
         self.points_batch_size = points_batch_size
         self.ray_batch_size = ray_batch_size
         self.renderer = sni.renderer
@@ -143,15 +145,21 @@ class Mesher(object):
             ret, _ = decoders(pi, all_planes=all_planes)    # [N,3+1+num_classes]
 
             ret[~mask, 3] = -1
+            if not self.semantic_only:
+                if color:
+                    rets_color.append(ret[:, :4])
+                if semantic:
+                    semantic_val = torch.max(ret[:, 4:], dim=1).indices.squeeze()
+                    img_semantic = self.decode_segmap(image=semantic_val.detach().cpu(), nc=self.n_classes)
+                    rets_semantic.append(img_semantic)
+            else:
+                if semantic:
+                    semantic_val = torch.max(ret[:, 1:], dim=1).indices.squeeze()
+                    img_semantic = self.decode_segmap(image=semantic_val.detach().cpu(), nc=self.n_classes)
+                    rets_semantic.append(img_semantic)
+        if not self.semantic_only:
             if color:
-                rets_color.append(ret[:, :4])
-            if semantic:
-                semantic_val = torch.max(ret[:, 4:], dim=1).indices.squeeze()
-                img_semantic = self.decode_segmap(image=semantic_val.detach().cpu(), nc=self.n_classes)
-                rets_semantic.append(img_semantic)
-
-        if color:
-            ret = torch.cat(rets_color, dim=0)
+                ret = torch.cat(rets_color, dim=0)
         if semantic:
             ret = torch.cat(rets_semantic, dim=0)
 
@@ -196,6 +204,7 @@ class Mesher(object):
             keyframe_dict (dict): keyframe dictionary.
             device (str): device to run the model.
             color (bool): whether to use color.
+            semantic (bool): whether to use semantic.
         Returns:
             None
 
@@ -276,10 +285,10 @@ class Mesher(object):
             if semantic:
                 mesh_semantic = trimesh.Trimesh(vertices, faces, vertex_colors=vertex_semantic)
                 mesh_semantic.export(mesh_out_semantic)
-                print('Saved mesh at', mesh_out_semantic)
+                print('Saved semantic mesh at', mesh_out_semantic)
 
             if self.verbose:
-                print('Saved mesh at', mesh_out_semantic)
+                print('Saved semantic mesh at', mesh_out_semantic)
 
     def decode_segmap(self, image, nc):
         label_colors = np.array([(0, 0, 0),  # 0=background
