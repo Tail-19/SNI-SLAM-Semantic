@@ -1,17 +1,19 @@
 scale: 1
 verbose: False
-device: "cuda:0"
+# device: "cuda:0"
+device: "cpu"
 keyframe_device: "cpu" # Change this to "cpu" to reduce GPU memory usage
 feature_device: "cpu"
 
-planes_res:
+# 平面的分辨率
+planes_res: 
   coarse: 0.24
   fine: 0.06
   bound_dividable: 0.24
-c_planes_res:
+c_planes_res: # for color planes
   coarse: 0.24
   fine: 0.03
-s_planes_res:
+s_planes_res: # for semantic planes
   coarse: 0.24
   fine: 0.03
 
@@ -84,7 +86,7 @@ rendering:
   learnable_beta: True
 model:
   c_dim: 16
-  truncation: 0.06
+  truncation: 0.06 #truncation for sdf, means the sdf value is truncated to [-truncation, truncation]
   hidden_dim: 32
   fused_hidden_dim: 16
   sem_hidden_dim: 256

@@ -1,5 +1,4 @@
 # This file is a part of SNI-SLAM
-
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -13,7 +12,7 @@ from src.utils.Frame_Visualizer import Frame_Visualizer
 from src.tools.cull_mesh import cull_mesh
 import wandb
 
-class Mapper(object):
+class Mapper(object): 
     """
     Mapping main class.
     Args:
@@ -21,14 +20,15 @@ class Mapper(object):
         args (argparse.Namespace): arguments
         sni : SNI_SLAM object
     """
-
+    #sni is the SNI_SLAM object
     def __init__(self, cfg, args, sni):
 
         self.cfg = cfg
         self.args = args
 
-        self.idx = sni.idx
-        self.truncation = sni.truncation
+        #get all the shared variables from SNI_SLAM
+        self.idx = sni.idx # shared idx
+        self.truncation = sni.truncation # shared truncation
         self.bound = sni.bound
         self.logger = sni.logger
         self.mesher = sni.mesher
@@ -42,7 +42,7 @@ class Mapper(object):
         self.planes_xy = sni.shared_planes_xy
         self.planes_xz = sni.shared_planes_xz
         self.planes_yz = sni.shared_planes_yz
-
+ # -----> COLOR 
         self.c_planes_xy = sni.shared_c_planes_xy
         self.c_planes_xz = sni.shared_c_planes_xz
         self.c_planes_yz = sni.shared_c_planes_yz
@@ -52,13 +52,11 @@ class Mapper(object):
         self.s_planes_xy = sni.shared_s_planes_xy
         self.s_planes_xz = sni.shared_s_planes_xz
         self.s_planes_yz = sni.shared_s_planes_yz
-
         self.estimate_c2w_list = sni.estimate_c2w_list
         self.mapping_first_frame = sni.mapping_first_frame
-
         self.model_manager = sni.model_manager
 
-        self.enable_wandb = cfg['func']['enable_wandb']
+        self.enable_wandb = cfg['func']['enable_wandb'] 
         if self.enable_wandb:
             self.wandb_run = sni.wandb_run
 
@@ -66,7 +64,6 @@ class Mapper(object):
         self.device = cfg['device']
         self.keyframe_device = cfg['keyframe_device']
         self.feature_device = cfg['feature_device']
-
         self.eval_rec = cfg['meshing']['eval_rec']
         self.joint_opt = False  # Even if joint_opt is enabled, it starts only when there are at least 4 keyframes
         self.joint_opt_cam_lr = cfg['mapping']['joint_opt_cam_lr'] # The learning rate for camera poses during mapping
@@ -79,17 +76,14 @@ class Mapper(object):
         self.w_sdf_tail = cfg['mapping']['w_sdf_tail']
         self.w_depth = cfg['mapping']['w_depth']
         self.w_color = cfg['mapping']['w_color']
-
         self.w_feature = cfg['mapping']['w_feature']
         self.w_semantic = cfg['mapping']['w_semantic']
-
         self.keyframe_every = cfg['mapping']['keyframe_every']
         self.mapping_window_size = cfg['mapping']['mapping_window_size']
         self.no_vis_on_first_frame = cfg['mapping']['no_vis_on_first_frame']
         self.no_log_on_first_frame = cfg['mapping']['no_log_on_first_frame']
         self.no_mesh_on_first_frame = cfg['mapping']['no_mesh_on_first_frame']
         self.keyframe_selection_method = cfg['mapping']['keyframe_selection_method']
-
         self.c_dim = cfg['model']['c_dim']
         self.n_classes = cfg['model']['cnn']['n_classes']
 
@@ -108,7 +102,7 @@ class Mapper(object):
         self.H, self.W, self.fx, self.fy, self.cx, self.cy = sni.H, sni.W, sni.fx, sni.fy, sni.cx, sni.cy
 
 
-    def sdf_losses(self, sdf, z_vals, gt_depth):
+    def sdf_losses(self, sdf, z_vals, gt_depth): 
         """
         Computes the losses for a signed distance function (SDF) given its values, depth values and ground truth depth.
 
@@ -123,24 +117,24 @@ class Mapper(object):
         """
 
         front_mask = torch.where(z_vals < (gt_depth[:, None] - self.truncation),
-                                 torch.ones_like(z_vals), torch.zeros_like(z_vals)).bool()
+                                 torch.ones_like(z_vals), torch.zeros_like(z_vals)).bool() #把z_vals中小于gt_depth-truncation的值设为1，否则设为0
 
         back_mask = torch.where(z_vals > (gt_depth[:, None] + self.truncation),
-                                torch.ones_like(z_vals), torch.zeros_like(z_vals)).bool()
+                                torch.ones_like(z_vals), torch.zeros_like(z_vals)).bool() #把z_vals中大于gt_depth+truncation的值设为1，否则设为0
 
         center_mask = torch.where((z_vals > (gt_depth[:, None] - 0.4 * self.truncation)) *
                                   (z_vals < (gt_depth[:, None] + 0.4 * self.truncation)),
-                                  torch.ones_like(z_vals), torch.zeros_like(z_vals)).bool()
+                                  torch.ones_like(z_vals), torch.zeros_like(z_vals)).bool() #把z_vals中在gt_depth-0.4*truncation和gt_depth+0.4*truncation之间的值设为1，否则设为0
 
         tail_mask = (~front_mask) * (~back_mask) * (~center_mask)
 
-        fs_loss = torch.mean(torch.square(sdf[front_mask] - torch.ones_like(sdf[front_mask])))
+        fs_loss = torch.mean(torch.square(sdf[front_mask] - torch.ones_like(sdf[front_mask]))) # free space loss
         center_loss = torch.mean(torch.square(
             (z_vals + sdf * self.truncation)[center_mask] - gt_depth[:, None].expand(z_vals.shape)[center_mask]))
         tail_loss = torch.mean(torch.square(
             (z_vals + sdf * self.truncation)[tail_mask] - gt_depth[:, None].expand(z_vals.shape)[tail_mask]))
 
-        sdf_losses = self.w_sdf_fs * fs_loss + self.w_sdf_center * center_loss + self.w_sdf_tail * tail_loss
+        sdf_losses = self.w_sdf_fs * fs_loss + self.w_sdf_center * center_loss + self.w_sdf_tail * tail_loss 
 
         return sdf_losses
 
@@ -166,13 +160,13 @@ class Mapper(object):
             0, H, 0, W, num_rays, H, W, fx, fy, cx, cy,
             c2w.unsqueeze(0), gt_depth.unsqueeze(0), gt_color.unsqueeze(0), device=device, dim=self.c_dim)
 
-        gt_depth = gt_depth.reshape(-1, 1)
-        nonzero_depth = gt_depth[:, 0] > 0
-        rays_o = rays_o[nonzero_depth]
-        rays_d = rays_d[nonzero_depth]
-        gt_depth = gt_depth[nonzero_depth]
+        gt_depth = gt_depth.reshape(-1, 1) #-1标识自动计算维度
+        nonzero_depth = gt_depth[:, 0] > 0 # only consider the pixels with depth > 0
+        rays_o = rays_o[nonzero_depth] # only consider the rays with depth > 0
+        rays_d = rays_d[nonzero_depth] # only consider the rays with depth > 0
+        gt_depth = gt_depth[nonzero_depth] # only consider the rays with depth > 0
         gt_depth = gt_depth.repeat(1, num_samples)
-        t_vals = torch.linspace(0., 1., steps=num_samples).to(device)
+        t_vals = torch.linspace(0., 1., steps=num_samples).to(device) #linespace函数用于生成等差数列
         near = gt_depth*0.8
         far = gt_depth+0.5
         z_vals = near * (1.-t_vals) + far * (t_vals)
@@ -184,14 +178,14 @@ class Mapper(object):
 
         ones = torch.ones_like(pts[..., 0], device=device).reshape(1, -1, 1)
         homo_pts = torch.cat([pts, ones], dim=-1).reshape(1, -1, 4, 1).expand(w2cs.shape[0], -1, -1, -1)
-        w2cs_exp = w2cs.unsqueeze(1).expand(-1, homo_pts.shape[1], -1, -1)
+        w2cs_exp = w2cs.unsqueeze(1).expand(-1, homo_pts.shape[1], -1, -1) 
         cam_cords_homo = w2cs_exp @ homo_pts
         cam_cords = cam_cords_homo[:, :, :3]
         K = torch.tensor([[fx, .0, cx], [.0, fy, cy],
-                          [.0, .0, 1.0]], device=device).reshape(3, 3)
-        cam_cords[:, :, 0] *= -1
-        uv = K @ cam_cords
-        z = uv[:, :, -1:] + 1e-5
+                          [.0, .0, 1.0]], device=device).reshape(3, 3) #相机内参矩阵
+        cam_cords[:, :, 0] *= -1 #相机坐标
+        uv = K @ cam_cords  #@标识矩阵乘法，这里将相机坐标通过内参矩阵转换为图像上的像素坐标uv
+        z = uv[:, :, -1:] + 1e-5 
         uv = uv[:, :, :2] / z
         edge = 20
         mask = (uv[:, :, 0] < W - edge) * (uv[:, :, 0] > edge) * \
@@ -207,10 +201,10 @@ class Mapper(object):
 
         selected_keyframes = list(selected_keyframes.cpu().numpy())
 
-        return selected_keyframes
+        return selected_keyframes  
 
     # def get_feature_from_ray(self, batch_rays_o, batch_rays_d, kf_sem_feats, kf_rgb_feats):
-
+# -----> COLOR
     def optimize_mapping(self, iters, lr_factor, idx, cur_gt_color, cur_gt_depth, gt_cur_c2w, cur_sem_feat,
                          cur_sem_label, gt_label, keyframe_dict, keyframe_list, cur_c2w):
         all_planes = (self.planes_xy, self.planes_xz, self.planes_yz,
@@ -220,6 +214,7 @@ class Mapper(object):
         cfg = self.cfg
         device = self.device
 
+        # select keyframes for optimization
         if len(keyframe_dict) == 0:
             optimize_frame = []
         else:
@@ -236,30 +231,27 @@ class Mapper(object):
 
         pixs_per_image = self.mapping_pixels//len(optimize_frame)
 
+        # Prepare the parameters for optimization
         decoders_para_list = []
         decoders_para_list += list(self.decoders.parameters())
-
         planes_para = []
         for planes in [self.planes_xy, self.planes_xz, self.planes_yz]:
             for i, plane in enumerate(planes):
                 plane = nn.Parameter(plane)
                 planes_para.append(plane)
                 planes[i] = plane
-
         c_planes_para = []
         for c_planes in [self.c_planes_xy, self.c_planes_xz, self.c_planes_yz]:
             for i, c_plane in enumerate(c_planes):
                 c_plane = nn.Parameter(c_plane)
                 c_planes_para.append(c_plane)
                 c_planes[i] = c_plane
-
         s_planes_para = []
         for s_planes in [self.s_planes_xy, self.s_planes_xz, self.s_planes_yz]:
             for i, s_plane in enumerate(s_planes):
                 s_plane = nn.Parameter(s_plane)
                 s_planes_para.append(s_plane)
                 s_planes[i] = s_plane
-
         gt_depths = []
         gt_colors = []
         c2ws = []
@@ -408,7 +400,7 @@ class Mapper(object):
                 else:
                     cur_c2w = optimized_c2ws[-1]
 
-        return cur_c2w
+        return cur_c2w #返回优化后的相机位姿
 
     def add_noise(self, gt_sem_label, noise_ratio):
         h,w = gt_sem_label.shape
@@ -439,10 +431,11 @@ class Mapper(object):
         prev_idx = -1
         while True:
             while True:
-                idx = self.idx[0].clone()
+                #Check if the current frame is the last frame every time
+                idx = self.idx[0].clone() #这里用clone是为了防止idx[0]的值被改变
                 if idx == self.n_img-1: ## Last input frame
                     break
-
+                #if the current frame is not the last frame, then check if the current frame is the same as the previous frame
                 if idx % self.every_frame == 0 and idx != prev_idx:
                     break
 
@@ -453,7 +446,7 @@ class Mapper(object):
             _, gt_color, gt_depth, gt_c2w, gt_semantic = next(data_iterator)
             gt_color = gt_color.squeeze(0).to(self.device, non_blocking=True)
             gt_depth = gt_depth.squeeze(0).to(self.device, non_blocking=True)
-            gt_c2w = gt_c2w.squeeze(0).to(self.device, non_blocking=True)
+            gt_c2w = gt_c2w.squeeze(0).to(self.device, non_blocking=True) #ground truth 相机位姿
             gt_semantic = gt_semantic.squeeze(0).to(self.device)
 
             cur_c2w = self.estimate_c2w_list[idx]
@@ -501,7 +494,7 @@ class Mapper(object):
                 frame_dict['sem_feat'] = sem_feat.to(self.feature_device)
                 frame_dict['gt_sem_label'] = gt_sem_label.to(self.feature_device)
 
-                self.keyframe_dict.append(frame_dict)
+                self.keyframe_dict.append(frame_dict) #将当前帧加入到关键帧字典中
 
             init_phase = False
             self.mapping_first_frame[0] = 1     # mapping of first frame is done, can begin tracking
@@ -525,7 +518,6 @@ class Mapper(object):
                 mesh_out_color = f'{self.output}/mesh/final_mesh_color.ply'
                 self.mesher.get_mesh(mesh_out_color, all_planes, self.decoders, self.keyframe_dict, self.device, mesh_out_semantic=mesh_out_semantic, semantic=False)
                 cull_mesh(mesh_out_color, self.cfg, self.args, self.device, estimate_c2w_list=self.estimate_c2w_list)
-
                 break
 
             if idx == self.n_img-1:

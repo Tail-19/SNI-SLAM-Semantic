@@ -25,13 +25,13 @@ from src.common import get_rays, sample_pdf, normalize_3d_coordinate
 
 class Renderer(object):
     def __init__(self, cfg, sni, ray_batch_size=10000):
-        self.ray_batch_size = ray_batch_size
+        self.ray_batch_size = ray_batch_size #
 
         self.perturb = cfg['rendering']['perturb']
         self.n_stratified = cfg['rendering']['n_stratified']
         self.n_importance = cfg['rendering']['n_importance']
 
-        self.scale = cfg['scale']
+        self.scale = cfg['scale'] 
         self.bound = sni.bound.to(sni.device, non_blocking=True)
         self.model_manager = sni.model_manager
 
@@ -131,7 +131,8 @@ class Renderer(object):
             fused_feat = torch.cat([rgb_fused_feat, depth_feats, sem_fused_feat], dim=2)
             fused_feat = fused_feat.reshape(-1, fused_feat.shape[-1])
 
-        raw, plane_feat = decoders(pts, all_planes)
+        # -----> NeRF network 
+        raw, plane_feat = decoders(pts, all_planes) # 
         alpha = self.sdf2alpha(raw[..., 3], decoders.beta)
         weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1), device=device)
                                                 ,(1. - alpha + 1e-10)], -1), -1)[:, :-1]
@@ -165,7 +166,7 @@ class Renderer(object):
             device (torch.device): device to run on.
             gt_depth (tensor, H*W): ground truth depth image.
         Returns:
-            rendered_depth (tensor, H*W): rendered depth image.
+            rendered_depth (tensor, H*W): rendered depth image. 
             rendered_rgb (tensor, H*W*3): rendered color image.
             rendered_semantic (tensor, H*W*C): rendered semantic image.
 
@@ -196,7 +197,7 @@ class Renderer(object):
                                                 device, truncation, gt_depth=gt_depth_batch)
 
                 depth, color, _, _, _, _, semantic = ret
-                depth_list.append(depth.double())
+                depth_list.append(depth.double()) 
                 color_list.append(color)
                 semantic_list.append(semantic)
 
