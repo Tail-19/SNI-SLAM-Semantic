@@ -127,8 +127,9 @@ class Renderer(object):
             sem_feats = sem_feats.unsqueeze(1)
             sem_feats = sem_feats.expand(-1, pts.shape[1], -1)
 
-            rgb_feats = rgb_feats.unsqueeze(1)
-            rgb_feats = rgb_feats.expand(-1, pts.shape[1], -1)
+            if rgb_feats is not None:
+                rgb_feats = rgb_feats.unsqueeze(1)
+                rgb_feats = rgb_feats.expand(-1, pts.shape[1], -1)
 
             depth_feats = self.model_manager.encoder(pts)
 

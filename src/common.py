@@ -130,15 +130,19 @@ def get_sample_uv(H0, H1, W0, W1, n, b, depths, colors, sem_feats=None, rgb_feat
 
     if sem_feats is not None:
         sem_feats = sem_feats.permute(0, 2, 3, 1).reshape(b, -1, sem_feats.shape[1])
-        rgb_feats = rgb_feats.permute(0, 2, 3, 1).reshape(b, -1, rgb_feats.shape[1])
-
+        # rgb_feats = rgb_feats.permute(0, 2, 3, 1).reshape(b, -1, rgb_feats.shape[1])
         sampled_sem_feats = torch.gather(sem_feats, 1, indices.unsqueeze(-1).expand(-1, -1, sem_feats.shape[-1]))
-        sampled_rgb_feats = torch.gather(rgb_feats, 1, indices.unsqueeze(-1).expand(-1, -1, rgb_feats.shape[-1]))
-
+        # sampled_rgb_feats = torch.gather(rgb_feats, 1, indices.unsqueeze(-1).expand(-1, -1, rgb_feats.shape[-1]))
     else:
         sampled_sem_feats = None
+        # sampled_rgb_feats = None
+        
+    if rgb_feats is not None:
+        rgb_feats = rgb_feats.permute(0, 2, 3, 1).reshape(b, -1, rgb_feats.shape[1])
+        sampled_rgb_feats = torch.gather(rgb_feats, 1, indices.unsqueeze(-1).expand(-1, -1, rgb_feats.shape[-1]))
+    else:
         sampled_rgb_feats = None
-
+        
     if gt_label is not None:
         gt_label = gt_label.reshape(b, -1)
         sampled_gt_label = torch.gather(gt_label, 1, indices)

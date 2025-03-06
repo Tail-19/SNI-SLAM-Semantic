@@ -282,8 +282,7 @@ class Mapper(object):
 
         #key frame  
         kf_sem_feats = []
-        if not self.semantic_only:
-            kf_rgb_feats = []
+        kf_rgb_feats = []
         kf_gt_label = []
         for frame in optimize_frame:
             if frame != -1:
@@ -325,12 +324,10 @@ class Mapper(object):
                 cam_poses = nn.Parameter(matrix_to_cam_pose(c2ws[1:]))
         
                 model_paras = [{'params': decoders_para_list, 'lr': 0},
-                            {'params': planes_para, 'lr': 0},
                             {'params': [cam_poses], 'lr': 0}]
 
             else:
-                model_paras = [{'params': decoders_para_list, 'lr': 0},
-                            {'params': planes_para, 'lr': 0}]
+                model_paras = [{'params': decoders_para_list, 'lr': 0}]
 
         #Here is the semantic plane parameters and NeRF parameters
         model_paras.append({'params': s_planes_para, 'lr': 5e-3})

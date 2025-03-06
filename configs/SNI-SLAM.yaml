@@ -1,5 +1,5 @@
 scale: 1
-verbose: False
+verbose: True
 # device: "cuda:0" #Hanlu: This is for test run on 4060
 device: "cuda:0"
 keyframe_device: "cuda:0" # Change this to "cpu" to reduce GPU memory usage
