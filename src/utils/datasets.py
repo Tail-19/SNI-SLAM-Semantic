@@ -141,7 +141,8 @@ class Replica(BaseDataset):
         self.n_img = len(self.color_paths)
         self.load_poses(f'{self.input_folder}/traj.txt')
 
-        self.path = cfg['model']['path']
+        # self.path = cfg['model']['path']
+        self.path = os.path.abspath('.') + '/seg'
 
         if Replica.semantic_classes is None or Replica.num_semantic_class is None:
             self.load_semantic_classes()
@@ -172,7 +173,7 @@ class Replica(BaseDataset):
         Replica.num_semantic_class = self.num_semantic_class
 
     def load_semantic_classes(self):
-        # print(f'{self.path}/semantic_classes.pkl')
+        print(f'{self.path}/semantic_classes.pkl')
         with open(f'{self.path}/semantic_classes.pkl', 'rb') as f:
             self.semantic_classes = pickle.load(f)
         with open(f'{self.path}/num_semantic_class.pkl', 'rb') as f:
