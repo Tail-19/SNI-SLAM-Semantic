@@ -157,10 +157,12 @@ class Tracker(object):
         Returns:
             loss (float): The value of loss.
         """
-
-        all_planes = (self.planes_xy, self.planes_xz, self.planes_yz,
-                      self.c_planes_xy, self.c_planes_xz, self.c_planes_yz,
-                      self.s_planes_xy, self.s_planes_xz, self.s_planes_yz)
+        if not self.semantic_only:
+            all_planes = (self.planes_xy, self.planes_xz, self.planes_yz,
+                        self.c_planes_xy, self.c_planes_xz, self.c_planes_yz,
+                        self.s_planes_xy, self.s_planes_xz, self.s_planes_yz)
+        else:
+            all_planes = (self.s_planes_xy, self.s_planes_xz, self.s_planes_yz)
 
         device = self.device
         H, W, fx, fy, cx, cy = self.H, self.W, self.fx, self.fy, self.cx, self.cy
@@ -176,34 +178,33 @@ class Tracker(object):
             depth, color, sdf, z_vals, _, _, render_semantic = self.renderer.render_batch_ray(all_planes, self.decoders, batch_rays_d, batch_rays_o,
                                                                    self.device, self.truncation, gt_depth=batch_gt_depth)
         else:
-            sdf, z_vals, _, _, render_semantic = self.renderer.render_semantic(all_planes, self.decoders, batch_rays_d, batch_rays_o, 
+            depth, _, sdf, z_vals, _, _, render_semantic = self.renderer.render_batch_ray(all_planes, self.decoders, batch_rays_d, batch_rays_o, 
                                                                             self.device, self.truncation, gt_depth=batch_gt_depth)
         ## Filtering the rays for which the rendered depth error is greater than 10 times of the median depth error
         
-        if not self.semantic_only:
-            depth_error = (batch_gt_depth - depth.detach()).abs()
-            error_median = depth_error.median()
-            depth_mask = (depth_error < 10 * error_median)
+        # if not self.semantic_only:
+        depth_error = (batch_gt_depth - depth.detach()).abs()
+        error_median = depth_error.median()
+        depth_mask = (depth_error < 10 * error_median)
 
         for param_group in optimizer.param_groups:
             for param in param_group['params']:
                 param.requires_grad = True
         
+
+        ## SDF losses
+        sdf_loss = self.sdf_losses(sdf[depth_mask], z_vals[depth_mask], batch_gt_depth[depth_mask])
+        loss = sdf_loss
+        
         if not self.semantic_only:
-            ## SDF losses
-            sdf_loss = self.sdf_losses(sdf[depth_mask], z_vals[depth_mask], batch_gt_depth[depth_mask])
-            loss = sdf_loss
             ## Color Loss
             color_loss = self.w_color * torch.square(batch_gt_color - color)[depth_mask].mean()
             loss = loss + color_loss
+            
+        ### Depth loss
+        depth_loss = self.w_depth * torch.square(batch_gt_depth[depth_mask] - depth[depth_mask]).mean()
+        loss = loss + depth_loss
 
-            ### Depth loss
-            depth_loss = self.w_depth * torch.square(batch_gt_depth[depth_mask] - depth[depth_mask]).mean()
-            loss = loss + depth_loss
-        else:
-            ## SDF losses
-            sdf_loss = self.sdf_losses(sdf, z_vals, batch_gt_depth)
-            loss = sdf_loss
 
         if self.verbose:
             start_time = time.time()

@@ -287,23 +287,23 @@ class Mapper(object):
         for frame in optimize_frame:
             if frame != -1:
                 sem_feat = keyframe_dict[frame]['sem_feat'].to(device)
-                if not self.semantic_only:
-                    rgb_feat = self.model_manager.head(sem_feat)
-                    kf_rgb_feats.append(rgb_feat.squeeze(0))
+                # if not self.semantic_only:
+                rgb_feat = self.model_manager.head(sem_feat)
+                kf_rgb_feats.append(rgb_feat.squeeze(0))
                 kf_sem_feats.append(sem_feat.squeeze(0))
                 gt_sem_label = keyframe_dict[frame]['gt_sem_label'].to(device)
                 kf_gt_label.append(gt_sem_label)
 
             else:
-                if not self.semantic_only:
-                    rgb_feat = self.model_manager.head(cur_sem_feat)
-                    kf_rgb_feats.append(rgb_feat.squeeze(0))
+                # if not self.semantic_only:
+                rgb_feat = self.model_manager.head(cur_sem_feat)
+                kf_rgb_feats.append(rgb_feat.squeeze(0))
                 kf_sem_feats.append(cur_sem_feat.squeeze(0))
                 kf_gt_label.append(cur_sem_label)
 
         kf_sem_feats = torch.stack(kf_sem_feats, dim=0)
-        if not self.semantic_only:
-            kf_rgb_feats = torch.stack(kf_rgb_feats, dim=0)
+        # if not self.semantic_only:
+        kf_rgb_feats = torch.stack(kf_rgb_feats, dim=0)
         kf_gt_label = torch.stack(kf_gt_label, dim=0)
 
         if not self.semantic_only:
@@ -369,9 +369,9 @@ class Mapper(object):
             else:
                 batch_rays_o, batch_rays_d, batch_gt_depth, batch_gt_color, batch_sem_feats, batch_rgb_feats, batch_gt_label = get_samples(
                     0, H, 0, W, pixs_per_image, H, W, fx, fy, cx, cy, c2ws_, gt_depths, gt_colors,
-                    sem_feats=kf_sem_feats, rgb_feats=None, gt_label=kf_gt_label, device=device, dim=self.c_dim)
+                    sem_feats=kf_sem_feats, rgb_feats=kf_rgb_feats, gt_label=kf_gt_label, device=device, dim=self.c_dim)
                 
-                sdf, z_vals, gt_feat, plane_feat, render_semantic = self.renderer.render_batch_ray(all_planes, self.decoders,
+                depth, _, sdf, z_vals, gt_feat, plane_feat, render_semantic = self.renderer.render_batch_ray(all_planes, self.decoders,
                                                                 batch_rays_d, batch_rays_o, device, self.truncation, gt_depth=batch_gt_depth,
                                                                 sem_feats=batch_sem_feats, rgb_feats=batch_rgb_feats,
                                                                 return_emb=True)
@@ -387,9 +387,9 @@ class Mapper(object):
                 color_loss = self.w_color * torch.square(batch_gt_color - color).mean()
                 loss = loss + color_loss
 
-                ### Depth loss
-                depth_loss = self.w_depth * torch.square(batch_gt_depth[depth_mask] - depth[depth_mask]).mean()
-                loss = loss + depth_loss
+            ### Depth loss
+            depth_loss = self.w_depth * torch.square(batch_gt_depth[depth_mask] - depth[depth_mask]).mean()
+            loss = loss + depth_loss
 
             ### feature loss
             plane_feature = plane_feat.detach()

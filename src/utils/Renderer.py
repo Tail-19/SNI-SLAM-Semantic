@@ -133,12 +133,16 @@ class Renderer(object):
 
             depth_feats = self.model_manager.encoder(pts)
 
-            sem_fused_feat, rgb_fused_feat = self.model_manager.feat_fusion(sem_feats, depth_feats, rgb_feats)
-            fused_feat = torch.cat([rgb_fused_feat, depth_feats, sem_fused_feat], dim=2)
+            # -----> Feature Fusion
+            sem_fused_feat, rgb_fused_feat = self.model_manager.feat_fusion(sem_feats, depth_feats, rgb_feats) #HANLU: This is where the cross attention takes place
+            if not self.semantic_only:
+                fused_feat = torch.cat([rgb_fused_feat, depth_feats, sem_fused_feat], dim=2)
+            else:
+                fused_feat = torch.cat([depth_feats, sem_fused_feat], dim=2)
             fused_feat = fused_feat.reshape(-1, fused_feat.shape[-1])
 
         # -----> NeRF network 
-        raw, plane_feat = decoders(pts, all_planes, self.semantic_only) #HANLU
+        raw, plane_feat = decoders(pts, all_planes, self.semantic_only) #HANLU 这里返回的raw和plane_feat都删除了rgb_feat
         if not self.semantic_only:
             alpha = self.sdf2alpha(raw[..., 3], decoders.beta)
         else:
@@ -151,6 +155,7 @@ class Renderer(object):
             rendered_depth = torch.sum(weights * z_vals, -1)
             rendered_semantic = torch.sum(weights[..., None].detach() * raw[..., 4:], -2) #这里后面返回了但是没有使用
         else:
+            rendered_depth = torch.sum(weights * z_vals, -1)
             rendered_semantic = torch.sum(weights[..., None].detach() * raw[..., 1:], -2)
             
         if self.enable_wandb:
@@ -165,7 +170,7 @@ class Renderer(object):
             return (rendered_depth, rendered_rgb, raw[..., 3], z_vals, fused_feat if return_emb else None,
                 plane_feat if return_emb else None, rendered_semantic)
         else:
-            return (raw[..., 0], z_vals, fused_feat if return_emb else None,
+            return (rendered_depth, _, raw[..., 0], z_vals, fused_feat if return_emb else None,
                 plane_feat if return_emb else None, rendered_semantic)
 
     def sdf2alpha(self, sdf, beta=10):

@@ -148,7 +148,7 @@ class Decoders(nn.Module):
     def forward(self, p, all_planes, semantic_only=False):
         p_shape = p.shape
         p_nor = normalize_3d_coordinate(p.clone(), self.bound)
-        if not self.semantic_only:
+        if not semantic_only:
             rgb, rgb_feat, sdf, sdf_feat = self.get_raw_sdf_rgb(p_nor, all_planes[:6])
             semantic, semantic_feat = self.get_raw_semantic(p_nor, all_planes[6:])
             raw = torch.cat([rgb, sdf.unsqueeze(-1), semantic], dim=-1)
