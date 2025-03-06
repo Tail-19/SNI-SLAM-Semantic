@@ -8,6 +8,7 @@ import sys
 parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 module_path = os.path.join(parent_dir, 'seg', 'facebookresearch_dinov2_main')
 sys.path.append(module_path)
+print(module_path)
 
 dino_backbones = {
     'dinov2_b':{

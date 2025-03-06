@@ -5,18 +5,18 @@ import torch.nn as nn
 
 
 # Nerf positional embedding
-class nerf_pos_embedding(nn.Module):
-    def __init__(self, in_dim, multires, log_sampling=True):
+class nerf_pos_embedding(nn.Module): # positional encoding
+    def __init__(self, in_dim, multires, log_sampling=True): #输入维度，多分辨率，是否对数采样
         super().__init__()
         self.log_sampling = log_sampling
-        self.include_input = True
-        self.periodic_fns = [torch.sin, torch.cos]
-        self.max_freq = multires-1
-        self.N_freqs = multires
-        self.embedding_size = multires*in_dim*2 + in_dim
+        self.include_input = True #是否包含输入
+        self.periodic_fns = [torch.sin, torch.cos] #正弦和余弦作为周期函数
+        self.max_freq = multires-1 #最大频率
+        self.N_freqs = multires #频率数量
+        self.embedding_size = multires*in_dim*2 + in_dim #嵌入维度
 
     def forward(self, x):
-        ray, points, _ = x.shape
+        ray, points, _ = x.shape #射线，点，_
         x = x.view(-1, 3)
         if self.log_sampling:
             freq_bands = 2.**torch.linspace(0., self.max_freq, steps=self.N_freqs)

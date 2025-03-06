@@ -3,6 +3,7 @@
 from src.networks.dinov2_seg import DINO2SEG
 from src.networks.mlp import head, encoder, feature_fusion
 import torch
+import os
 
 class ModelManager:
     def __init__(self, cfg):
@@ -11,7 +12,8 @@ class ModelManager:
 
         self.encoder_multires = cfg['model']['encoder']['multires']
 
-        self.pretrained_model_path = cfg['model']['cnn']['pretrained_model_path']
+        # self.pretrained_model_path = cfg['model']['cnn']['pretrained_model_path']
+        self.pretrained_model_path = os.path.abspath('.') + '/seg/dinov2_replica.pth'
         self.n_classes = cfg['model']['cnn']['n_classes']
 
         self.img_h = cfg['cam']['H']
